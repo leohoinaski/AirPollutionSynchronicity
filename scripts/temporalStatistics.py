@@ -227,109 +227,7 @@ def exceedanceSinc(dataBin, xlon, ylat):
                     
     return conXY
 
-def spatialCluster(aveData,xlon,ylat,datesTime):
-    import cgc
-    import matplotlib.pyplot as plt
-    import numpy as np
-    import xarray as xr
-    
-    
-    from cgc.triclustering import Triclustering
-    from cgc.kmeans import KMeans
-    
-    spring_indices = xr.DataArray(
-        data=aveData[:,:,:,:],
-        dims=["time","spring_index","y", "x"],
-        coords=dict(
-            x=(["x"], xlon[0,:]),
-            y=(["y"], ylat[:,0]),
-            time=datesTime.datetime,
-            spring_index=['O3'],
-        ),
-        attrs=dict(
-            description="concentration",
-            #units="degC",
-        ),
-    )
 
-    print(spring_indices)
-
-    
-    spring_indices = spring_indices.stack(space=['x', 'y'])
-    location = np.arange(spring_indices.space.size) # create a combined (x,y) index
-    spring_indices = spring_indices.assign_coords(location=('space', location))
-    
-    # drop pixels that are null-valued for any year/spring-index
-    #spring_indices = spring_indices.dropna('space', how='any')  
-    print(spring_indices)
-
-
-    num_band_clusters = 1
-    num_time_clusters = 5
-    num_space_clusters = 10
-    
-    max_iterations = 50  # maximum number of iterations
-    conv_threshold = 0.1  # convergence threshold 
-    nruns = 1  # number of differently-initialized runs
-    
-    tc = Triclustering(
-        spring_indices.data,  # data array with shape: (bands, rows, columns)
-        num_time_clusters,  
-        num_space_clusters,
-        num_band_clusters, 
-        max_iterations=max_iterations,  
-        conv_threshold=conv_threshold, 
-        nruns=nruns
-    )
-    
-    results = tc.run_with_threads(nthreads=1)
-
-    time_clusters = xr.DataArray(results.bnd_clusters, dims='time', 
-                                 coords=spring_indices.time.coords, 
-                                 name='time cluster')
-    space_clusters = xr.DataArray(results.col_clusters, dims='space', 
-                                  coords=spring_indices.space.coords, 
-                                  name='space cluster')
-    band_clusters = xr.DataArray(results.row_clusters, dims='spring_index', 
-                                 coords=spring_indices.spring_index.coords, 
-                                 name='band cluster')
-    
-    fig, ax = plt.subplots()
-
-    space_clusters_xy = space_clusters.unstack('space')
-    space_clusters_xy.isel().plot.imshow(
-        x='x', y='y', levels=range(num_space_clusters+1)
-    )
-
-    clusters = (results.bnd_clusters, results.row_clusters, results.col_clusters)
-    nclusters = (num_band_clusters, num_time_clusters, num_space_clusters)
-    km = KMeans(
-        spring_indices.data,
-        clusters=clusters,
-        nclusters=nclusters,
-        k_range=range(2, 10)
-    )
-    results_kmeans = km.compute()
-    print(f"Optimal k value: {results_kmeans.k_value}")
-    
-    labels = xr.DataArray(
-    results_kmeans.labels, 
-        coords=(
-            ('band_clusters', range(num_band_clusters)),
-            ('time_clusters', range(num_time_clusters)), 
-            ('space_clusters', range(num_space_clusters))
-        )
-    )
-    
-    # drop tri-clusters that are not populated  
-    labels = labels.dropna('band_clusters', how='all')
-    labels = labels.dropna('time_clusters', how='all')
-    labels = labels.dropna('space_clusters', how='all')
-    labels = labels.sel(space_clusters=space_clusters, drop=True)
-    labels = labels.unstack('space')
-    fig, ax = plt.subplots()
-    ax.pcolor(labels[0,0,:,:].transpose())
-    return
 
 
 def eqmerc2latlon(ds, xv, yv):
@@ -418,3 +316,172 @@ def dataINcity(aveData, datesTime, cityMat, s, IBGE_CODE):
         cityDataFrame['Datetime'] = datesTime.datetime
         cityDataFrame = cityDataFrame.set_index(['Datetime'])
     return cityData, cityDataPoints, cityDataFrame, matData
+
+
+def kmeanClustering(aveData,xlon,ylat,borderShape):
+    
+    #https://annefou.github.io/metos_python/05-scipy/
+    import netCDF4
+    import numpy as np
+    from scipy.cluster.vq import vq,kmeans
+    from matplotlib import colors as c
+    import matplotlib.pyplot as plt
+
+    lats = ylat
+    lons = xlon
+    pw = aveData[200,0,:,:]
+
+    # Flatten image to get line of values
+    flatraster = pw.flatten()
+    #flatraster.mask = False
+    flatraster = flatraster.data
+    
+    # Create figure to receive results
+    fig = plt.figure(figsize=[20,7])
+    fig.suptitle('K-Means Clustering')
+    
+    # In first subplot add original image
+    ax = plt.subplot(241)
+    ax.axis('off')
+    ax.set_title('Original Image\nMonthly Average Precipitable Water\n over Ice-Free Oceans (kg m-2)')
+    original=ax.pcolor(xlon,ylat,pw, cmap='rainbow_r')
+    plt.colorbar(original, cmap='rainbow_r', ax=ax, orientation='vertical')
+    br = gpd.read_file(borderShape)
+
+    br.boundary.plot(edgecolor='black',linewidth=0.5,ax=ax)
+    ax.set_xlim([xlon.min(), xlon.max()])
+    ax.set_ylim([ylat.min(), ylat.max()]) 
+    ax.set_xticks([])
+    ax.set_yticks([])
+    # In remaining subplots add k-means clustered images
+    # Define colormap
+    list_colors=['blue','orange', 'green', 'magenta', 'cyan', 'gray', 'red', 'yellow']
+    for i in range(7):
+        print("Calculate k-means with ", i+2, " clusters.")
+        
+        #This scipy code clusters k-mean, code has same length as flattened
+        # raster and defines which cluster the value corresponds to
+        centroids, variance = kmeans(flatraster, i+2)
+        code, distance = vq(flatraster, centroids)
+        
+        #Since code contains the clustered values, reshape into SAR dimensions
+        codeim = code.reshape(pw.shape[0], pw.shape[1])
+        
+        #Plot the subplot with (i+2)th k-means
+        ax = plt.subplot(2,4,i+2)
+        ax.axis('off')
+        xlabel = str(i+2) , ' clusters'
+        ax.set_title(xlabel)
+        bounds=range(0,i+2)
+        cmap = c.ListedColormap(list_colors[0:i+2])
+        #kmp=ax.imshow(xlon,ylat,codeim, interpolation='nearest', aspect='auto', cmap=cmap,  origin='lower')
+        kmp=ax.pcolor(xlon,ylat,codeim)
+        plt.colorbar(kmp, cmap=cmap,  ticks=bounds, ax=ax, orientation='vertical')
+
+        br.boundary.plot(edgecolor='black',linewidth=0.5,ax=ax)
+        ax.set_xlim([xlon.min(), xlon.max()])
+        ax.set_ylim([ylat.min(), ylat.max()]) 
+        ax.set_xticks([])
+        ax.set_yticks([])
+    plt.show()
+
+def spatialCluster(aveData,xlon,ylat,datesTime):
+    #https://cgc-tutorial.readthedocs.io/en/latest/notebooks/triclustering.html
+    #import cgc
+    #import matplotlib.pyplot as plt
+    import numpy as np
+    import xarray as xr
+    
+    
+    from cgc.triclustering import Triclustering
+    from cgc.kmeans import KMeans
+    
+    spring_indices = xr.DataArray(
+        data=aveData[:,:,:,:],
+        dims=["time","spring_index","y", "x"],
+        coords=dict(
+            x=(["x"], xlon[0,:]),
+            y=(["y"], ylat[:,0]),
+            time=datesTime.datetime,
+            spring_index=['O3'],
+        ),
+        attrs=dict(
+            description="concentration",
+            #units="degC",
+        ),
+    )
+
+    print(spring_indices)
+
+    
+    spring_indices = spring_indices.stack(space=['x', 'y'])
+    location = np.arange(spring_indices.space.size) # create a combined (x,y) index
+    spring_indices = spring_indices.assign_coords(location=('space', location))
+    
+    # drop pixels that are null-valued for any year/spring-index
+    #spring_indices = spring_indices.dropna('space', how='any')  
+    print(spring_indices)
+
+
+    num_band_clusters = 1
+    num_time_clusters = 6
+    num_space_clusters = 10
+    
+    max_iterations = 50  # maximum number of iterations
+    conv_threshold = 0.1  # convergence threshold 
+    nruns = 3  # number of differently-initialized runs
+    
+    tc = Triclustering(
+        spring_indices.data,  # data array with shape: (bands, rows, columns)
+        num_time_clusters,  
+        num_space_clusters,
+        num_band_clusters, 
+        max_iterations=max_iterations,  
+        conv_threshold=conv_threshold, 
+        nruns=nruns
+    )
+    
+    results = tc.run_with_threads(nthreads=1)
+ 
+    time_clusters = xr.DataArray(results.bnd_clusters, dims='time', 
+                                 coords=spring_indices.time.coords, 
+                                 name='time cluster')
+    space_clusters = xr.DataArray(results.col_clusters, dims='space', 
+                                  coords=spring_indices.space.coords, 
+                                  name='space cluster')
+    band_clusters = xr.DataArray(results.row_clusters, dims='spring_index', 
+                                 coords=spring_indices.spring_index.coords, 
+                                 name='band cluster')
+    
+    space_clusters_xy = space_clusters.unstack('space')
+
+
+    clusters = (results.bnd_clusters, results.row_clusters, results.col_clusters)
+    nclusters = (num_band_clusters, num_time_clusters, num_space_clusters)
+    km = KMeans(
+        spring_indices.data,
+        clusters=clusters,
+        nclusters=nclusters,
+        k_range=range(2, 10)
+    )
+    results_kmeans = km.compute()
+    print(f"Optimal k value: {results_kmeans.k_value}")
+    
+    labels = xr.DataArray(
+    results_kmeans.labels, 
+        coords=(
+            ('band_clusters', range(num_band_clusters)),
+            ('time_clusters', range(num_time_clusters)), 
+            ('space_clusters', range(num_space_clusters))
+        )
+    )
+    
+    # drop tri-clusters that are not populated  
+    labels = labels.dropna('band_clusters', how='all')
+    labels = labels.dropna('time_clusters', how='all')
+    labels = labels.dropna('space_clusters', how='all')
+    labels = labels.sel(space_clusters=space_clusters, drop=True)
+    labels = labels.unstack('space')
+    
+    
+    return labels,space_clusters_xy,time_clusters

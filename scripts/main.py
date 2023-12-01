@@ -13,7 +13,7 @@ import shutil
 
 #%% INPUTS
 
-path = '/mnt/sdb1/AticlesProduction/Sincronization'
+path = '/mnt/sdb1/AticlesProduction/AirPollutionSynchronicity'
 fileType='BRAIN_ClippedCONC'
 borderShape = '/mnt/sdb1/shapefiles/Brasil.shp'
 cityShape='/mnt/sdb1/shapefiles/BR_Municipios_2020.shp'
@@ -111,11 +111,11 @@ print('Looping for each variable')
 for pol in pollutants:
     
     # Selecting files and variables
-    prefixed = sorted([filename for filename in os.listdir(path) if filename.startswith(fileType+'_'+pol['tag'])])
+    prefixed = sorted([filename for filename in os.listdir(path+'/data') if filename.startswith(fileType+'_'+pol['tag'])])
 
     print('Openning netCDF files')
     # Opening netCDF files
-    ds = nc.Dataset(path+'/'+prefixed[0])
+    ds = nc.Dataset(path+'/data/'+prefixed[0])
     
     
     print(pol)
@@ -239,4 +239,7 @@ for pol in pollutants:
                            cmap6,borderShape,pol['Criteria_annual'],
                            figfolder,pol['tag'],'Annual average')
         
-    tst.spatialCluster(aveData,xlon,ylat,datesTime)
+    labels,space_clusters_xy,time_clusters = tst.spatialCluster(aveData,xlon,ylat,datesTime)
+    garfig.spatioTemporalClustering(labels,borderShape,space_clusters_xy,
+                                 time_clusters,4,
+                                 xlon,ylat)

@@ -485,3 +485,38 @@ def spatialWindFig(data,U10,V10,xlon,ylat,legend,cmap,borderShape,folder,pol,emi
     fig.savefig(folder+'/spatialEmissFig_'+pol+'_'+emissType+'.png',
                 format="png",bbox_inches='tight')
     return fig
+
+
+def spatioTemporalClustering(labels,borderShape,space_clusters_xy,
+                             time_clusters,num_time_clusters,
+                             xlon,ylat):
+
+    fig, ax = plt.subplots()
+    ax.pcolor(xlon,ylat,labels[0,0,:,:].transpose())
+    br = gpd.read_file(borderShape)
+    br.boundary.plot(edgecolor='black',linewidth=0.5,ax=ax)
+    ax.set_xlim([xlon.min(), xlon.max()])
+    ax.set_ylim([ylat.min(), ylat.max()]) 
+    ax.set_xticks([])
+    ax.set_yticks([])
+    
+    fig, ax = plt.subplots()
+    ax.pcolor(xlon,ylat,space_clusters_xy[:,:].transpose())
+    br = gpd.read_file(borderShape)
+    br.boundary.plot(edgecolor='black',linewidth=0.5,ax=ax)
+    ax.set_xlim([xlon.min(), xlon.max()])
+    ax.set_ylim([ylat.min(), ylat.max()]) 
+    ax.set_xticks([])
+    ax.set_yticks([])
+    
+    fig, ax = plt.subplots(1, 2)
+
+    # line plot
+    time_clusters.plot(ax=ax[0], x='time', marker='o')
+    ax[0].set_yticks(range(num_time_clusters))
+    
+    # temporal cluster histogram
+    time_clusters.plot.hist(ax=ax[1], bins=num_time_clusters)
+    
+    
+    return fig
