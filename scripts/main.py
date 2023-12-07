@@ -243,3 +243,7 @@ for pol in pollutants:
     garfig.spatioTemporalClustering(labels,borderShape,space_clusters_xy,
                                  time_clusters,4,
                                  xlon,ylat)
+    
+    labels,space_clusters_xy,time_clusters = tst.spatialCluster(dataBin,xlon,ylat,datesTime)
+    
+    tst.kmeanClustering(aveData,xlon,ylat,borderShape)

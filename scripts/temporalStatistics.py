@@ -392,10 +392,10 @@ def spatialCluster(aveData,xlon,ylat,datesTime):
     import numpy as np
     import xarray as xr
     
-    
+    #aveData = dataBin.copy()
     from cgc.triclustering import Triclustering
     from cgc.kmeans import KMeans
-    
+
     spring_indices = xr.DataArray(
         data=aveData[:,:,:,:],
         dims=["time","spring_index","y", "x"],
@@ -410,6 +410,8 @@ def spatialCluster(aveData,xlon,ylat,datesTime):
             #units="degC",
         ),
     )
+        
+
 
     print(spring_indices)
 
@@ -462,7 +464,7 @@ def spatialCluster(aveData,xlon,ylat,datesTime):
         spring_indices.data,
         clusters=clusters,
         nclusters=nclusters,
-        k_range=range(2, 10)
+        #k_range=range(2, 10)
     )
     results_kmeans = km.compute()
     print(f"Optimal k value: {results_kmeans.k_value}")
